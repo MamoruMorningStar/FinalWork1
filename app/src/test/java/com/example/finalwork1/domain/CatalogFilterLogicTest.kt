@@ -33,6 +33,15 @@ class CatalogFilterLogicTest {
     }
 
     @Test
+    fun hiddenOnlyModeCanRecoverHiddenCharactersRegardlessOfGlobalSetting() {
+        val visible = row.copy(isHidden = false)
+        val hiddenFilter = CatalogFilter(onlyHidden = true, showHidden = false)
+        assertTrue(CatalogFilterLogic.matches(row, hiddenFilter))
+        assertFalse(CatalogFilterLogic.matches(visible, hiddenFilter))
+        assertFalse(CatalogFilterLogic.matches(row, CatalogFilter()))
+    }
+
+    @Test
     fun queryAndStatus() {
         val visible = row.copy(isHidden = false)
         assertTrue(CatalogFilterLogic.matches(visible, CatalogFilter(query = "rick", status = "Alive")))
@@ -70,12 +79,23 @@ class CatalogFilterLogicTest {
         val none = row.copy(
             isHidden = false,
             tracking = TrackingStatus.NONE,
+            isPinned = false, hasNote = false, inCollections = 0,
             character = row.character.copy(id = 5),
         )
         val rows = listOf(tracking, none)
         val filtered = rows.filter { CatalogFilterLogic.matches(it, CatalogFilter(onlyTracking = true)) }
         assertEquals(1, filtered.size)
         assertEquals(TrackingStatus.TRACKING, filtered.first().tracking)
+    }
+
+    @Test
+    fun myListIncludesNotesCollectionsAndPins() {
+        val base = row.copy(isHidden = false, tracking = TrackingStatus.NONE, isPinned = false,
+            hasNote = false, inCollections = 0)
+        assertFalse(CatalogFilterLogic.matches(base, CatalogFilter(onlyTracking = true)))
+        assertTrue(CatalogFilterLogic.matches(base.copy(hasNote = true), CatalogFilter(onlyTracking = true)))
+        assertTrue(CatalogFilterLogic.matches(base.copy(inCollections = 1), CatalogFilter(onlyTracking = true)))
+        assertTrue(CatalogFilterLogic.matches(base.copy(isPinned = true), CatalogFilter(onlyTracking = true)))
     }
 
     @Test

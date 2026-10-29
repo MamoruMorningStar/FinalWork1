@@ -23,7 +23,9 @@ class SyncWorker @AssistedInject constructor(
         val preloadPages = preferencesRepository.preferences.first().preloadPages
         val pages = repository.stalePages(preloadPages)
         val outcome = SyncBatch { page -> repository.refresh(page).isSuccess }.runPages(pages)
-        if (!outcome.shouldRetry) Result.success()
-        else if (runAttemptCount < 3) Result.retry() else Result.failure()
+        setProgress(androidx.work.workDataOf("updated" to outcome.succeeded, "failed" to outcome.failed))
+        if (!outcome.shouldRetry) Result.success(androidx.work.workDataOf("updated" to outcome.succeeded, "failed" to 0))
+        else if (runAttemptCount < 3) Result.retry()
+        else Result.failure(androidx.work.workDataOf("updated" to outcome.succeeded, "failed" to outcome.failed))
     }
 }

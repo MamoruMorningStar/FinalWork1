@@ -23,6 +23,16 @@ class SyncBatchTest {
         assertTrue(result.shouldRetry)
     }
 
+    @Test fun `cancellation is never converted to a failed page`() = runTest {
+        var propagated = false
+        try {
+            SyncBatch { throw kotlinx.coroutines.CancellationException("stop") }.run(2)
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            propagated = true
+        }
+        assertTrue(propagated)
+    }
+
     @Test fun `only requested stale pages are retried and later pages run`() = runTest {
         val attempts = mutableListOf<Int>()
         val result = SyncBatch { page -> attempts.add(page); page != 2 }.runPages(listOf(5, 2, 5))

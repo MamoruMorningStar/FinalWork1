@@ -31,6 +31,7 @@ class AppViewModelTest {
         every { repository.characters } returns flowOf(emptyList())
         every { repository.collections } returns flowOf(emptyList())
         every { repository.history } returns flowOf(emptyList())
+        every { repository.membershipCounts } returns flowOf(emptyList())
         every { preferences.preferences } returns flowOf(AppPreferences())
     }
 

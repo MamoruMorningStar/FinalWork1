@@ -109,6 +109,26 @@ class RepositoryDatabaseTest {
         assertTrue(runCatching { repo.createCollection("   ") }.isFailure)
     }
 
+    @Test fun collectionNamesAreCaseInsensitive() = runBlocking {
+        val repo = CharacterRepository(database.dao(), object : RickMortyApi {
+            override suspend fun getCharacters(page: Int): CharacterPage = error("unused")
+        })
+        repo.createCollection("Любимые")
+        assertTrue(runCatching { repo.createCollection("любимые") }.isFailure)
+        assertEquals(1, repo.collections.first().size)
+    }
+
+    @Test fun cancellationPropagatesFromRefresh() = runBlocking {
+        val repo = CharacterRepository(database.dao(), object : RickMortyApi {
+            override suspend fun getCharacters(page: Int): CharacterPage {
+                throw kotlinx.coroutines.CancellationException("cancelled")
+            }
+        })
+        var cancelled = false
+        try { repo.refresh(1) } catch (_: kotlinx.coroutines.CancellationException) { cancelled = true }
+        assertTrue(cancelled)
+    }
+
     @Test fun failedNetworkRefreshDoesNotMarkPageFresh() = runBlocking {
         val repo = CharacterRepository(database.dao(), object : RickMortyApi {
             override suspend fun getCharacters(page: Int): CharacterPage = error("offline")

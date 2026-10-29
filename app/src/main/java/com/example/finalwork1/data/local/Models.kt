@@ -3,6 +3,7 @@ package com.example.finalwork1.data.local
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 import androidx.room.ForeignKey
 
 @Entity(tableName = "characters")
@@ -24,11 +25,12 @@ data class CharacterEntity(
     val rating: Int = 0,
 )
 
-@Entity(tableName = "user_collections", indices = [Index(value = ["title"], unique = true)])
+@Entity(tableName = "user_collections", indices = [Index(value = ["title"], unique = true), Index(value = ["titleKey"], unique = true)])
 data class UserCollectionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val description: String = "",
+    @ColumnInfo(defaultValue = "''") val titleKey: String = title.trim().lowercase(java.util.Locale.ROOT),
     val createdAt: Long = System.currentTimeMillis(),
 )
 
@@ -53,3 +55,6 @@ data class RecentVisitEntity(
 
 @Entity(tableName = "cached_pages")
 data class CachedPageEntity(@PrimaryKey val page: Int, val fetchedAt: Long)
+
+
+data class CharacterMembershipCount(val characterId: Int, val count: Int)

@@ -17,6 +17,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import com.example.finalwork1.data.AppPreferences
 import com.example.finalwork1.domain.SyncPlanner
+import kotlinx.coroutines.CancellationException
+import java.io.IOException
+import retrofit2.HttpException
+import kotlinx.coroutines.flow.map
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
@@ -26,10 +30,16 @@ class AppViewModel @Inject constructor(
 
     val characters = repository.characters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collections = repository.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val membershipCounts = repository.membershipCounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val history = repository.history.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val preferences = preferencesRepository.preferences.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppPreferences())
     val syncMessage = MutableStateFlow("Локальная база готова")
     val busy = MutableStateFlow(false)
+    private fun errorLabel(error: Throwable): String = when (error) {
+        is IOException -> "Ошибка сети: ${error.message ?: "нет соединения"}"
+        is HttpException -> "Ошибка сервера: HTTP ${error.code()}"
+        else -> "Ошибка обновления: ${error.message ?: error::class.java.simpleName}"
+    }
 
     private val refreshMutex = Mutex()
     val loadedPages = MutableStateFlow(0)
@@ -47,16 +57,16 @@ class AppViewModel @Inject constructor(
             busy.value = true
             try {
                 var updated = 0
-                val failures = mutableListOf<Int>()
+                val failures = mutableListOf<String>()
                 for (page in pages.distinct().sorted()) {
                     repository.refresh(page).fold(
                         onSuccess = { updated += it },
-                        onFailure = { failures += page },
+                        onFailure = { failures += "страница $page — ${errorLabel(it)}" },
                     )
                 }
                 loadedPages.value = repository.highestCachedPage()
                 syncMessage.value = if (failures.isEmpty()) "Обновлено: $updated персонажей"
-                    else "Обновлено: $updated · Не загрузились страницы: ${failures.joinToString()}"
+                    else "Обновлено: $updated · Ошибки: ${failures.joinToString()}"
             } finally {
                 busy.value = false
             }
@@ -79,7 +89,7 @@ class AppViewModel @Inject constructor(
                         loadedPages.value = repository.highestCachedPage()
                         syncMessage.value = "Загружена страница $next"
                     },
-                    onFailure = { syncMessage.value = "Не удалось загрузить страницу $next" },
+                    onFailure = { syncMessage.value = errorLabel(it) },
                 )
             } finally {
                 busy.value = false
@@ -94,12 +104,12 @@ class AppViewModel @Inject constructor(
     fun rate(id: Int, value: Int) = viewModelScope.launch { repository.setRating(id, value) }
     fun visit(character: CharacterEntity) = viewModelScope.launch { repository.visit(character) }
     fun createCollection(title: String, description: String = "", onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
-        runCatching { repository.createCollection(title, description) }
+        runCatching { repository.createCollection(title, description) }.also { if (it.exceptionOrNull() is CancellationException) throw it.exceptionOrNull()!! }
             .onSuccess { syncMessage.value = "Коллекция создана"; onResult(true) }
             .onFailure { syncMessage.value = "Название уже используется или не удалось создать коллекцию"; onResult(false) }
     }
     fun editCollection(id: Long, title: String, description: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
-        runCatching { repository.editCollection(id, title, description) }
+        runCatching { repository.editCollection(id, title, description) }.also { if (it.exceptionOrNull() is CancellationException) throw it.exceptionOrNull()!! }
             .onSuccess { onResult(true) }
             .onFailure { onResult(false) }
     }
@@ -109,8 +119,18 @@ class AppViewModel @Inject constructor(
     fun setShowHidden(value: Boolean) = viewModelScope.launch { preferencesRepository.setShowHidden(value) }
     fun setPreloadPages(value: Int) = viewModelScope.launch {
         preferencesRepository.setPreloadPages(value)
-        val missing = repository.stalePages(value)
-        refreshPages(missing)
+        refreshMutex.withLock {
+            val missing = repository.stalePages(value)
+            if (missing.isNotEmpty()) {
+                busy.value = true
+                try {
+                    val failed = mutableListOf<String>()
+                    for (page in missing) repository.refresh(page).onFailure { failed += errorLabel(it) }
+                    loadedPages.value = repository.highestCachedPage()
+                    syncMessage.value = if (failed.isEmpty()) "Предзагрузка завершена" else "Ошибки: ${failed.joinToString()}"
+                } finally { busy.value = false }
+            }
+        }
     }
     fun setDarkTheme(value: Boolean) = viewModelScope.launch { preferencesRepository.setDarkTheme(value) }
     fun collectionCharacters(id: Long) = repository.collectionCharacters(id)

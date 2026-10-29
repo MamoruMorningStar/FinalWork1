@@ -23,14 +23,17 @@ data class CatalogFilter(
     val status: String = "",
     val species: String = "",
     val showHidden: Boolean = false,
+    val onlyHidden: Boolean = false,
     val onlyTracking: Boolean = false,
     val personalStatus: String = "",
 )
 
 object CatalogFilterLogic {
     fun matches(row: CatalogRow, filter: CatalogFilter): Boolean {
-        if (row.isHidden && !filter.showHidden) return false
-        if (filter.onlyTracking && row.tracking == TrackingStatus.NONE) return false
+        if (filter.onlyHidden) {
+            if (!row.isHidden) return false
+        } else if (row.isHidden && !filter.showHidden) return false
+        if (filter.onlyTracking && row.tracking == TrackingStatus.NONE && !row.isPinned && !row.hasNote && row.inCollections == 0) return false
         if (filter.personalStatus.isNotBlank() && row.tracking.name != filter.personalStatus) return false
         val query = filter.query.trim()
         if (query.isNotEmpty() && !row.character.name.contains(query, true) &&

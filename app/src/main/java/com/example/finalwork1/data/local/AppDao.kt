@@ -70,6 +70,9 @@ interface AppDao {
     @Query("DELETE FROM collection_members WHERE collectionId = :collectionId AND characterId = :characterId")
     suspend fun removeFromCollection(collectionId: Long, characterId: Int)
 
+    @Query("SELECT characterId, COUNT(*) AS count FROM collection_members GROUP BY characterId")
+    fun observeMembershipCounts(): Flow<List<CharacterMembershipCount>>
+
     @Query("SELECT COUNT(*) FROM collection_members WHERE collectionId = :collectionId")
     fun observeCollectionCount(collectionId: Long): Flow<Int>
 
@@ -116,6 +119,6 @@ interface AppDao {
         trimHistory()
     }
 
-    @Query("UPDATE user_collections SET title = :title, description = :description WHERE id = :id")
-    suspend fun editCollection(id: Long, title: String, description: String)
+    @Query("UPDATE user_collections SET title = :title, titleKey = :titleKey, description = :description WHERE id = :id")
+    suspend fun editCollection(id: Long, title: String, titleKey: String, description: String)
 }

@@ -32,7 +32,7 @@ internal fun FavoritesScreen(
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("Избранные персонажи", style = MaterialTheme.typography.headlineSmall)
-        Text("Персонажи, отмеченные звёздочкой в каталоге.")
+        Text("Персонажи, отмеченные звёздочкой. Скрытые учитывают настройку видимости.")
         if (characters.isEmpty()) {
             EmptyState("Избранное пока пусто", "Открой каталог и нажми ☆ рядом с персонажем, чтобы добавить его сюда.")
         } else {

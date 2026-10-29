@@ -95,8 +95,17 @@ internal fun CharacterDetailDialog(
                     OutlinedButton(onClick = onHide) { Text(if (character.isHidden) "Показать" else "Скрыть") }
                 }
                 Text("Моя оценка: ${character.rating}/5")
-                Row { (1..5).forEach { value -> TextButton(onClick = { onRate(value) }) { Text(if (value <= character.rating) "★" else "☆") } } }
-                OutlinedTextField(note, { note = it; noteDirty = true }, label = { Text("Личная заметка") }, minLines = 2, maxLines = 5)
+                Row(horizontalArrangement = Arrangement.spacedBy(0.dp), verticalAlignment = Alignment.CenterVertically) {
+                    (1..5).forEach { value ->
+                        TextButton(onClick = { onRate(value) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) {
+                            Text(if (value <= character.rating) "★" else "☆")
+                        }
+                    }
+                }
+                OutlinedButton(onClick = { onRate(0) }, enabled = character.rating != 0, modifier = Modifier.fillMaxWidth()) {
+                    Text("Убрать оценку")
+                }
+                OutlinedTextField(note, { note = it.take(2000); noteDirty = true }, label = { Text("Личная заметка (${note.length}/2000)") }, minLines = 2, maxLines = 5)
                 Button(onClick = { onNote(note); noteDirty = false }, modifier = Modifier.fillMaxWidth()) { Text("Сохранить заметку") }
                 Box {
                     OutlinedButton(onClick = { addExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text("Добавить в коллекцию") }

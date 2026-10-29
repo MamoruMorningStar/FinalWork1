@@ -31,6 +31,10 @@ internal fun CatalogScreen(
     personalStatusFilter: String, onPersonalStatus: (String) -> Unit,
     trackingOnly: Boolean, onTrackingOnly: (Boolean) -> Unit,
     showHidden: Boolean,
+    onlyHidden: Boolean, onOnlyHidden: (Boolean) -> Unit,
+    onResetFilters: () -> Unit,
+    membershipCounts: Map<Int, Int>,
+    loading: Boolean,
     onOpen: (CharacterEntity) -> Unit, onPin: (CharacterEntity) -> Unit,
     onHide: (CharacterEntity) -> Unit, onTrack: (CharacterEntity, String) -> Unit,
 ) {
@@ -38,12 +42,13 @@ internal fun CatalogScreen(
         query = query,
         status = if (statusFilter == "Все") "" else statusFilter,
         showHidden = showHidden,
+        onlyHidden = onlyHidden,
         onlyTracking = trackingOnly,
         personalStatus = if (personalStatusFilter == "Все") "" else personalStatusFilter,
     )
     val byId = characters.associateBy { it.id }
     val filtered = CatalogFilterLogic.sort(
-        characters.map { it.toCatalogRow() }.filter { row ->
+        characters.map { it.toCatalogRow(membershipCounts[it.id] ?: 0) }.filter { row ->
             CatalogFilterLogic.matches(row, filter)
         }
     ).mapNotNull { row -> byId[row.character.id] }
@@ -95,12 +100,22 @@ internal fun CatalogScreen(
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = trackingOnly, onClick = { onTrackingOnly(!trackingOnly) }, label = { Text("Мой список") })
-            Text("${filtered.size} персонажей", style = MaterialTheme.typography.labelMedium)
+            FilterChip(selected = onlyHidden, onClick = { onOnlyHidden(!onlyHidden) }, label = { Text("Скрытые") })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Показано ${filtered.size} из ${characters.size}", style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = onResetFilters) { Text("Сбросить фильтры") }
         }
         if (characters.isEmpty()) {
-            EmptyState("Пока нет локальных данных", "Подключись к интернету и нажми «Обновить». После загрузки каталог доступен офлайн.")
+            if (loading) {
+                Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text("Загружаем каталог…")
+                }
+            } else EmptyState("Пока нет локальных данных", "Подключись к интернету и нажми «Обновить». После загрузки каталог доступен офлайн.")
         } else if (filtered.isEmpty()) {
-            EmptyState("Ничего не найдено", "Измени запрос или фильтры.")
+            EmptyState("Ничего не найдено", "Сбрось фильтры или включи «Скрытые», чтобы найти скрытых персонажей.")
         } else {
             LazyColumn(contentPadding = PaddingValues(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(filtered, key = { it.id }) { c ->
@@ -130,6 +145,8 @@ internal fun CatalogScreen(
 internal fun CatalogDestination(
     characters: List<CharacterEntity>,
     showHidden: Boolean,
+    membershipCounts: Map<Int, Int>,
+    loading: Boolean,
     onOpen: (CharacterEntity) -> Unit,
     onPin: (CharacterEntity) -> Unit,
     onHide: (CharacterEntity) -> Unit,
@@ -139,9 +156,21 @@ internal fun CatalogDestination(
     var status by rememberSaveable { mutableStateOf("Все") }
     var personalStatus by rememberSaveable { mutableStateOf("Все") }
     var trackingOnly by rememberSaveable { mutableStateOf(false) }
+    var onlyHidden by rememberSaveable { mutableStateOf(false) }
+    val resetFilters = { query = ""; status = "Все"; personalStatus = "Все"; trackingOnly = false; onlyHidden = false }
+    val toggleHidden: (Boolean) -> Unit = { enabled ->
+        onlyHidden = enabled
+        if (enabled) {
+            query = ""
+            status = "Все"
+            personalStatus = "Все"
+            trackingOnly = false
+        }
+    }
     CatalogScreen(
         characters, query, { query = it }, status, { status = it },
         personalStatus, { personalStatus = it }, trackingOnly, { trackingOnly = it },
-        showHidden, onOpen, onPin, onHide, onTrack,
+        showHidden, onlyHidden, toggleHidden, resetFilters,
+        membershipCounts, loading, onOpen, onPin, onHide, onTrack,
     )
 }

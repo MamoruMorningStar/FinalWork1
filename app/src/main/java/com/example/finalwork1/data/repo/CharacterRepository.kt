@@ -7,6 +7,7 @@ import com.example.finalwork1.data.local.RecentVisitEntity
 import com.example.finalwork1.data.remote.RickMortyApi
 import com.example.finalwork1.domain.CachePolicy
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import com.example.finalwork1.domain.CollectionRules
 import com.example.finalwork1.data.local.UserCollectionEntity
@@ -16,6 +17,7 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
     val characters: Flow<List<CharacterEntity>> = dao.observeCharacters()
     val collections = dao.observeCollections()
     val history = dao.observeHistory()
+    val membershipCounts = dao.observeMembershipCounts()
 
     suspend fun isCacheStale(ttlMillis: Long = 24L * 60 * 60 * 1000, pages: Int = 1): Boolean =
         stalePages(pages, ttlMillis).isNotEmpty()
@@ -32,7 +34,15 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
         }
     }
 
-    suspend fun refresh(page: Int = 1): Result<Int> = runCatching {
+    suspend fun refresh(page: Int = 1): Result<Int> = try {
+        Result.success(refreshRemotePage(page))
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
+    private suspend fun refreshRemotePage(page: Int): Int {
         val response = api.getCharacters(page)
         val now = System.currentTimeMillis()
         val remoteItems = response.results.map { remote ->
@@ -45,7 +55,7 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
             )
         }
         dao.storeRemotePage(remoteItems, page, now)
-        response.results.size
+        return response.results.size
     }
 
     suspend fun visit(character: CharacterEntity) {
@@ -67,7 +77,7 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
     suspend fun editCollection(id: Long, title: String, description: String) {
         val normalized = CollectionRules.normalizeTitle(title)
         require(normalized.isNotBlank()) { "Название не может быть пустым" }
-        dao.editCollection(id, normalized, description.trim().take(300))
+        dao.editCollection(id, normalized, normalized.lowercase(java.util.Locale.ROOT), description.trim().take(300))
     }
     suspend fun deleteCollection(id: Long) = dao.deleteCollection(id)
     suspend fun addToCollection(collectionId: Long, characterId: Int) {

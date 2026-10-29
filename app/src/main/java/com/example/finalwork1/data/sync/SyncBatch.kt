@@ -1,6 +1,7 @@
 package com.example.finalwork1.data.sync
 
 import com.example.finalwork1.domain.SyncPlanner
+import kotlinx.coroutines.CancellationException
 
 class SyncBatch(private val loadPage: suspend (Int) -> Boolean) {
     suspend fun run(pageCount: Int): BatchResult = runPages(SyncPlanner.pagesToPreload(emptySet(), pageCount, pageCount))
@@ -9,7 +10,8 @@ class SyncBatch(private val loadPage: suspend (Int) -> Boolean) {
         var succeeded = 0
         var failed = 0
         for (page in pages.distinct().sorted()) {
-            if (runCatching { loadPage(page) }.getOrDefault(false)) succeeded++ else failed++
+            val succeededPage = try { loadPage(page) } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { false }
+            if (succeededPage) succeeded++ else failed++
         }
         return BatchResult(succeeded, failed)
     }

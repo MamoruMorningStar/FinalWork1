@@ -1,6 +1,9 @@
 package com.example.finalwork1
 
 import android.os.Bundle
+import androidx.compose.ui.platform.LocalContext
+import androidx.work.WorkManager
+import androidx.work.WorkInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -49,9 +52,23 @@ internal fun MediaShelfApp(vm: AppViewModel) {
     val characters by vm.characters.collectAsStateWithLifecycle()
     val collections by vm.collections.collectAsStateWithLifecycle()
     val history by vm.history.collectAsStateWithLifecycle()
+    val memberCounts by vm.membershipCounts.collectAsStateWithLifecycle()
     val prefs by vm.preferences.collectAsStateWithLifecycle()
     val message by vm.syncMessage.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val workManager = remember(context) { WorkManager.getInstance(context.applicationContext) }
+    val backgroundWork by workManager.getWorkInfosForUniqueWorkFlow("catalog_refresh")
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val backgroundStatus = backgroundWork.firstOrNull()?.let { info ->
+        when (info.state) {
+            WorkInfo.State.RUNNING -> "Фоновая синхронизация выполняется"
+            WorkInfo.State.FAILED -> "Фоновая синхронизация завершилась с ошибкой: ${info.outputData.getInt("failed", 0)} страниц"
+            WorkInfo.State.SUCCEEDED -> "Фоновая синхронизация завершена"
+            WorkInfo.State.ENQUEUED -> if (info.runAttemptCount > 0) "Фоновая синхронизация: ожидание повтора после ошибки" else ""
+            else -> ""
+        }
+    }.orEmpty()
     var showCreate by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -80,12 +97,15 @@ internal fun MediaShelfApp(vm: AppViewModel) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Text(message, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(8.dp))
+            if (backgroundStatus.isNotBlank()) Text(backgroundStatus, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp))
             NavHost(navController = nav, startDestination = Screen.CATALOG.route, modifier = Modifier.weight(1f)) {
                 composable(Screen.CATALOG.route) {
                     Column {
                         Box(Modifier.weight(1f)) {
                             CatalogDestination(
                                 characters = characters, showHidden = prefs.showHidden,
+                                membershipCounts = memberCounts.associate { it.characterId to it.count },
+                                loading = busy,
                                 onOpen = { vm.visit(it); nav.navigate("character/${it.id}") },
                                 onPin = { vm.pin(it.id, !it.isPinned) },
                                 onHide = { vm.hide(it.id, !it.isHidden) },
@@ -98,7 +118,7 @@ internal fun MediaShelfApp(vm: AppViewModel) {
                     }
                 }
                 composable(Screen.FAVORITES.route) {
-                    FavoritesScreen(characters.filter { it.isPinned },
+                    FavoritesScreen(characters.filter { it.isPinned && (prefs.showHidden || !it.isHidden) },
                         onOpen = { vm.visit(it); nav.navigate("character/${it.id}") },
                         onRemove = { vm.pin(it.id, false) })
                 }
