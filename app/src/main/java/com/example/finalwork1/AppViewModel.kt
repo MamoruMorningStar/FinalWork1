@@ -1,7 +1,8 @@
 package com.example.finalwork1
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -20,10 +21,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
-class AppViewModel(application: Application) : AndroidViewModel(application) {
-    private val dao = AppDatabase.get(application).dao()
-    private val repository = CharacterRepository(dao, RickMortyApi.create())
-    private val preferencesRepository = PreferencesRepository(application)
+class AppViewModel(
+    private val repository: CharacterRepository,
+    private val preferencesRepository: PreferencesRepository,
+    private val scheduleSync: () -> Unit,
+) : ViewModel() {
 
     val characters = repository.characters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collections = repository.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -33,7 +35,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val busy = kotlinx.coroutines.flow.MutableStateFlow(false)
 
     init {
-        scheduleBackgroundSync()
+        scheduleSync()
         viewModelScope.launch {
             // Кэш остаётся источником UI; сеть обновляет его только при истечении TTL.
             if (repository.isCacheStale()) refresh()
@@ -52,13 +54,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun scheduleBackgroundSync() {
-        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        val request = PeriodicWorkRequestBuilder<SyncWorker>(12, TimeUnit.HOURS)
-            .setConstraints(constraints).build()
-        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork(
-            "catalog_refresh", ExistingPeriodicWorkPolicy.KEEP, request
-        )
+    class Factory(context: Context) : ViewModelProvider.Factory {
+        private val appContext = context.applicationContext
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            require(modelClass.isAssignableFrom(AppViewModel::class.java))
+            val repository = CharacterRepository(AppDatabase.get(appContext).dao(), RickMortyApi.create())
+            val preferences = PreferencesRepository(appContext)
+            return AppViewModel(repository, preferences) {
+                val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+                val request = PeriodicWorkRequestBuilder<SyncWorker>(12, TimeUnit.HOURS)
+                    .setConstraints(constraints).build()
+                WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                    "catalog_refresh", ExistingPeriodicWorkPolicy.KEEP, request
+                )
+            } as T
+        }
     }
 
     fun track(id: Int, value: String) = viewModelScope.launch { repository.setTracking(id, value) }

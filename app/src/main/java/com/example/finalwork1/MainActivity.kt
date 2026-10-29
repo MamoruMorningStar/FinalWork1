@@ -27,7 +27,7 @@ import com.example.finalwork1.domain.toCatalogRow
 import com.example.finalwork1.ui.theme.FINALWORK1Theme
 
 class MainActivity : ComponentActivity() {
-    private val vm: AppViewModel by viewModels()
+    private val vm: AppViewModel by viewModels { AppViewModel.Factory(applicationContext) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {

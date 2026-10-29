@@ -35,10 +35,10 @@ interface RickMortyApi {
     suspend fun getCharacters(@Query("page") page: Int = 1): CharacterPage
 
     companion object {
-        fun create(): RickMortyApi {
+        fun create(baseUrl: String = "https://rickandmortyapi.com/api/"): RickMortyApi {
             val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
             return Retrofit.Builder()
-                .baseUrl("https://rickandmortyapi.com/api/")
+                .baseUrl(baseUrl)
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
                 .create(RickMortyApi::class.java)

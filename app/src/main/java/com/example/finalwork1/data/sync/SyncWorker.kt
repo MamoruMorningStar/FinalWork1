@@ -17,8 +17,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val preferences = PreferencesRepository(applicationContext).preferences
         val preloadPages = preferences.first().preloadPages
         var failed = false
-        // Page 1 plus the configured number of additional pages are cached for offline use.
-        for (page in 1..(preloadPages + 1)) {
+        for (page in 1..preloadPages) {
             if (repository.refresh(page).isFailure) { failed = true; break }
         }
         if (!failed) Result.success() else if (runAttemptCount < 3) Result.retry() else Result.failure()
