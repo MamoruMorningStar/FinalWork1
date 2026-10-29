@@ -24,12 +24,14 @@ data class CatalogFilter(
     val species: String = "",
     val showHidden: Boolean = false,
     val onlyTracking: Boolean = false,
+    val personalStatus: String = "",
 )
 
 object CatalogFilterLogic {
     fun matches(row: CatalogRow, filter: CatalogFilter): Boolean {
         if (row.isHidden && !filter.showHidden) return false
         if (filter.onlyTracking && row.tracking == TrackingStatus.NONE) return false
+        if (filter.personalStatus.isNotBlank() && row.tracking.name != filter.personalStatus) return false
         val query = filter.query.trim()
         if (query.isNotEmpty() && !row.character.name.contains(query, true) &&
             !row.character.species.contains(query, true) && !row.character.origin.contains(query, true)) return false

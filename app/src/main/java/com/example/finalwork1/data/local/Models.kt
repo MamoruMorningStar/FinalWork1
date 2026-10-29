@@ -50,3 +50,6 @@ data class RecentVisitEntity(
     val characterName: String,
     val visitedAt: Long = System.currentTimeMillis(),
 )
+
+@Entity(tableName = "cached_pages")
+data class CachedPageEntity(@PrimaryKey val page: Int, val fetchedAt: Long)

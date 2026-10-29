@@ -21,10 +21,8 @@ class SyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val preloadPages = preferencesRepository.preferences.first().preloadPages
-        var failed = false
-        for (page in 1..preloadPages) {
-            if (repository.refresh(page).isFailure) { failed = true; break }
-        }
-        if (!failed) Result.success() else if (runAttemptCount < 3) Result.retry() else Result.failure()
+        val outcome = SyncBatch { page -> repository.refresh(page).isSuccess }.run(preloadPages)
+        if (!outcome.shouldRetry) Result.success()
+        else if (runAttemptCount < 3) Result.retry() else Result.failure()
     }
 }

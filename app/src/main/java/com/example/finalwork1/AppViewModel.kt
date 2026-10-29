@@ -9,38 +9,75 @@ import com.example.finalwork1.data.repo.CharacterRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import com.example.finalwork1.data.AppPreferences
 
-@dagger.hilt.android.lifecycle.HiltViewModel
-class AppViewModel @javax.inject.Inject constructor(
+@HiltViewModel
+class AppViewModel @Inject constructor(
     private val repository: CharacterRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val syncScheduler: com.example.finalwork1.data.sync.SyncScheduler,
 ) : ViewModel() {
 
     val characters = repository.characters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collections = repository.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val history = repository.history.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val preferences = preferencesRepository.preferences.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.example.finalwork1.data.AppPreferences())
-    val syncMessage = kotlinx.coroutines.flow.MutableStateFlow("Локальная база готова")
-    val busy = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val preferences = preferencesRepository.preferences.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppPreferences())
+    val syncMessage = MutableStateFlow("Локальная база готова")
+    val busy = MutableStateFlow(false)
+
+    private val refreshMutex = Mutex()
+    val loadedPages = MutableStateFlow(0)
 
     init {
-        syncScheduler.schedule()
         viewModelScope.launch {
-            // Кэш остаётся источником UI; сеть обновляет его только при истечении TTL.
-            if (repository.isCacheStale()) refresh()
+            val pages = preferencesRepository.preferences.first().preloadPages
+            loadedPages.value = repository.highestCachedPage()
+            if (repository.isCacheStale(pages = pages)) refresh()
         }
     }
 
     fun refresh() {
         viewModelScope.launch {
+            if (!refreshMutex.tryLock()) return@launch
             busy.value = true
-            val result = repository.refresh()
-            syncMessage.value = result.fold(
-                { "Обновлено: $it персонажей · ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}" },
-                { "Нет соединения. Используются сохранённые данные." },
-            )
-            busy.value = false
+            try {
+                val count = maxOf(preferences.first().preloadPages, loadedPages.value)
+                var updated = 0
+                var failures = 0
+                for (page in 1..count) {
+                    repository.refresh(page).fold(
+                        onSuccess = { updated += it },
+                        onFailure = { failures++ },
+                    )
+                }
+                loadedPages.value = repository.highestCachedPage()
+                syncMessage.value = if (failures == 0) "Обновлено: $updated персонажей"
+                    else "Обновлено: $updated · Ошибки загрузки: $failures (кэш сохранён)"
+            } finally {
+                busy.value = false
+                refreshMutex.unlock()
+            }
+        }
+    }
+
+    fun loadNextPage() {
+        viewModelScope.launch {
+            if (!refreshMutex.tryLock()) return@launch
+            busy.value = true
+            try {
+                val next = maxOf(loadedPages.value, preferences.first().preloadPages) + 1
+                repository.refresh(next).fold(
+                    onSuccess = { loadedPages.value = next; syncMessage.value = "Загружена страница $next" },
+                    onFailure = { syncMessage.value = "Не удалось загрузить страницу $next" },
+                )
+            } finally {
+                busy.value = false
+                refreshMutex.unlock()
+            }
         }
     }
 
@@ -50,16 +87,24 @@ class AppViewModel @javax.inject.Inject constructor(
     fun note(id: Int, value: String) = viewModelScope.launch { repository.setNote(id, value) }
     fun rate(id: Int, value: Int) = viewModelScope.launch { repository.setRating(id, value) }
     fun visit(character: CharacterEntity) = viewModelScope.launch { repository.visit(character) }
-    fun createCollection(title: String, description: String = "") = viewModelScope.launch {
+    fun createCollection(title: String, description: String = "", onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
         runCatching { repository.createCollection(title, description) }
-            .onSuccess { syncMessage.value = "Коллекция создана" }
-            .onFailure { syncMessage.value = "Название уже используется или не удалось создать коллекцию" }
+            .onSuccess { syncMessage.value = "Коллекция создана"; onResult(true) }
+            .onFailure { syncMessage.value = "Название уже используется или не удалось создать коллекцию"; onResult(false) }
+    }
+    fun editCollection(id: Long, title: String, description: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
+        runCatching { repository.editCollection(id, title, description) }
+            .onSuccess { onResult(true) }
+            .onFailure { onResult(false) }
     }
     fun deleteCollection(id: Long) = viewModelScope.launch { repository.deleteCollection(id) }
     fun addToCollection(collectionId: Long, characterId: Int) = viewModelScope.launch { repository.addToCollection(collectionId, characterId) }
     fun removeFromCollection(collectionId: Long, characterId: Int) = viewModelScope.launch { repository.removeFromCollection(collectionId, characterId) }
     fun setShowHidden(value: Boolean) = viewModelScope.launch { preferencesRepository.setShowHidden(value) }
-    fun setPreloadPages(value: Int) = viewModelScope.launch { preferencesRepository.setPreloadPages(value) }
+    fun setPreloadPages(value: Int) = viewModelScope.launch {
+        preferencesRepository.setPreloadPages(value)
+        refresh()
+    }
     fun setDarkTheme(value: Boolean) = viewModelScope.launch { preferencesRepository.setDarkTheme(value) }
     fun collectionCharacters(id: Long) = repository.collectionCharacters(id)
 }
