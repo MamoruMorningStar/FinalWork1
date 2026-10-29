@@ -12,9 +12,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import com.example.finalwork1.data.AppPreferences
+import com.example.finalwork1.domain.SyncPlanner
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
@@ -40,43 +42,47 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    fun refresh() {
-        viewModelScope.launch {
-            if (!refreshMutex.tryLock()) return@launch
+    private suspend fun refreshPages(pages: List<Int>) {
+        refreshMutex.withLock {
             busy.value = true
             try {
-                val count = maxOf(preferences.first().preloadPages, loadedPages.value)
                 var updated = 0
-                var failures = 0
-                for (page in 1..count) {
+                val failures = mutableListOf<Int>()
+                for (page in pages.distinct().sorted()) {
                     repository.refresh(page).fold(
                         onSuccess = { updated += it },
-                        onFailure = { failures++ },
+                        onFailure = { failures += page },
                     )
                 }
                 loadedPages.value = repository.highestCachedPage()
-                syncMessage.value = if (failures == 0) "Обновлено: $updated персонажей"
-                    else "Обновлено: $updated · Ошибки загрузки: $failures (кэш сохранён)"
+                syncMessage.value = if (failures.isEmpty()) "Обновлено: $updated персонажей"
+                    else "Обновлено: $updated · Не загрузились страницы: ${failures.joinToString()}"
             } finally {
                 busy.value = false
-                refreshMutex.unlock()
             }
         }
     }
 
-    fun loadNextPage() {
-        viewModelScope.launch {
-            if (!refreshMutex.tryLock()) return@launch
+    fun refresh() = viewModelScope.launch {
+        val count = maxOf(preferences.first().preloadPages, loadedPages.value, 1)
+        refreshPages((1..count).toList())
+    }
+
+    fun loadNextPage() = viewModelScope.launch {
+        refreshMutex.withLock {
             busy.value = true
             try {
-                val next = maxOf(loadedPages.value, preferences.first().preloadPages) + 1
+                val cached = repository.cachedPageNumbers()
+                val next = SyncPlanner.nextMissingPage(cached, preferences.first().preloadPages)
                 repository.refresh(next).fold(
-                    onSuccess = { loadedPages.value = next; syncMessage.value = "Загружена страница $next" },
+                    onSuccess = {
+                        loadedPages.value = repository.highestCachedPage()
+                        syncMessage.value = "Загружена страница $next"
+                    },
                     onFailure = { syncMessage.value = "Не удалось загрузить страницу $next" },
                 )
             } finally {
                 busy.value = false
-                refreshMutex.unlock()
             }
         }
     }
@@ -103,7 +109,8 @@ class AppViewModel @Inject constructor(
     fun setShowHidden(value: Boolean) = viewModelScope.launch { preferencesRepository.setShowHidden(value) }
     fun setPreloadPages(value: Int) = viewModelScope.launch {
         preferencesRepository.setPreloadPages(value)
-        refresh()
+        val missing = repository.stalePages(value)
+        refreshPages(missing)
     }
     fun setDarkTheme(value: Boolean) = viewModelScope.launch { preferencesRepository.setDarkTheme(value) }
     fun collectionCharacters(id: Long) = repository.collectionCharacters(id)

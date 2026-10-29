@@ -52,10 +52,6 @@ internal fun MediaShelfApp(vm: AppViewModel) {
     val prefs by vm.preferences.collectAsStateWithLifecycle()
     val message by vm.syncMessage.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    var query by rememberSaveable { mutableStateOf("") }
-    var status by rememberSaveable { mutableStateOf("Все") }
-    var personalStatus by rememberSaveable { mutableStateOf("Все") }
-    var trackingOnly by rememberSaveable { mutableStateOf(false) }
     var showCreate by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -88,13 +84,13 @@ internal fun MediaShelfApp(vm: AppViewModel) {
                 composable(Screen.CATALOG.route) {
                     Column {
                         Box(Modifier.weight(1f)) {
-                            CatalogScreen(characters, query, { query = it }, status, { status = it },
-                                personalStatus, { personalStatus = it }, trackingOnly, { trackingOnly = it },
-                                prefs.showHidden,
+                            CatalogDestination(
+                                characters = characters, showHidden = prefs.showHidden,
                                 onOpen = { vm.visit(it); nav.navigate("character/${it.id}") },
                                 onPin = { vm.pin(it.id, !it.isPinned) },
                                 onHide = { vm.hide(it.id, !it.isHidden) },
-                                onTrack = { c, value -> vm.track(c.id, value) })
+                                onTrack = { c, value -> vm.track(c.id, value) },
+                            )
                         }
                         Button(onClick = vm::loadNextPage, modifier = Modifier.fillMaxWidth().padding(8.dp), enabled = !busy) {
                             Text("Загрузить следующую страницу")

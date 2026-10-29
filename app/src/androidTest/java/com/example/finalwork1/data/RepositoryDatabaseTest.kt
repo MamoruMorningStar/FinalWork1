@@ -96,4 +96,24 @@ class RepositoryDatabaseTest {
         })
         assertTrue(repo.isCacheStale(pages = 2))
     }
+
+    @Test fun duplicateCollectionTitleReturnsFailureWithoutLosingFirst() = runBlocking {
+        val repo = CharacterRepository(database.dao(), object : RickMortyApi {
+            override suspend fun getCharacters(page: Int): CharacterPage = error("unused")
+        })
+        repo.createCollection("  My list  ", "Original")
+        assertTrue(runCatching { repo.createCollection("My list", "Other") }.isFailure)
+        val collections = repo.collections.first()
+        assertEquals(1, collections.size)
+        assertEquals("Original", collections.single().description)
+        assertTrue(runCatching { repo.createCollection("   ") }.isFailure)
+    }
+
+    @Test fun failedNetworkRefreshDoesNotMarkPageFresh() = runBlocking {
+        val repo = CharacterRepository(database.dao(), object : RickMortyApi {
+            override suspend fun getCharacters(page: Int): CharacterPage = error("offline")
+        })
+        assertTrue(repo.refresh(2).isFailure)
+        assertEquals(listOf(1, 2), repo.stalePages(2))
+    }
 }

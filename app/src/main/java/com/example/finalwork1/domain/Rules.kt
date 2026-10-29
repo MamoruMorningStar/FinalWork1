@@ -50,6 +50,11 @@ object CollectionRules {
 }
 
 object SyncPlanner {
+    fun nextMissingPage(cachedPages: Set<Int>, minimumPages: Int): Int {
+        val upper = maxOf(cachedPages.maxOrNull() ?: 0, minimumPages.coerceAtLeast(1))
+        return (1..upper).firstOrNull { it !in cachedPages } ?: upper + 1
+    }
+
     fun pagesToPreload(cachedPages: Set<Int>, totalPages: Int, preloadCount: Int): List<Int> {
         if (totalPages <= 0 || preloadCount <= 0) return emptyList()
         return (1..totalPages).filterNot { it in cachedPages }.take(preloadCount)

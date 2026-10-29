@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -20,7 +21,6 @@ import com.example.finalwork1.data.local.UserCollectionEntity
 import com.example.finalwork1.domain.CatalogFilter
 import com.example.finalwork1.domain.CatalogFilterLogic
 import com.example.finalwork1.domain.toCatalogRow
-import com.example.finalwork1.ui.theme.FINALWORK1Theme
 
 
 @Composable
@@ -41,11 +41,12 @@ internal fun CatalogScreen(
         onlyTracking = trackingOnly,
         personalStatus = if (personalStatusFilter == "Все") "" else personalStatusFilter,
     )
+    val byId = characters.associateBy { it.id }
     val filtered = CatalogFilterLogic.sort(
         characters.map { it.toCatalogRow() }.filter { row ->
             CatalogFilterLogic.matches(row, filter)
         }
-    ).mapNotNull { row -> characters.firstOrNull { it.id == row.character.id } }
+    ).mapNotNull { row -> byId[row.character.id] }
 
 
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -124,3 +125,23 @@ internal fun CatalogScreen(
     }
 }
 
+
+@Composable
+internal fun CatalogDestination(
+    characters: List<CharacterEntity>,
+    showHidden: Boolean,
+    onOpen: (CharacterEntity) -> Unit,
+    onPin: (CharacterEntity) -> Unit,
+    onHide: (CharacterEntity) -> Unit,
+    onTrack: (CharacterEntity, String) -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var status by rememberSaveable { mutableStateOf("Все") }
+    var personalStatus by rememberSaveable { mutableStateOf("Все") }
+    var trackingOnly by rememberSaveable { mutableStateOf(false) }
+    CatalogScreen(
+        characters, query, { query = it }, status, { status = it },
+        personalStatus, { personalStatus = it }, trackingOnly, { trackingOnly = it },
+        showHidden, onOpen, onPin, onHide, onTrack,
+    )
+}

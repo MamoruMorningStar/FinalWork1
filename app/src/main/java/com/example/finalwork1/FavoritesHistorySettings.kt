@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.finalwork1.data.local.RecentVisitEntity
 import com.example.finalwork1.data.local.CharacterEntity
 import com.example.finalwork1.data.local.UserCollectionEntity
 import com.example.finalwork1.domain.CatalogFilter
@@ -48,7 +49,7 @@ internal fun FavoritesScreen(
 
 @Composable
 internal fun HistoryScreen(
-    history: List<com.example.finalwork1.data.local.RecentVisitEntity>,
+    history: List<RecentVisitEntity>,
     characters: List<CharacterEntity>,
     onOpen: (CharacterEntity) -> Unit,
 ) {

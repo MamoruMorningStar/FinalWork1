@@ -29,6 +29,17 @@ interface AppDao {
         gender: String, origin: String, location: String, imageUrl: String, episodeCount: Int, fetchedAt: Long)
 
 
+    @Transaction
+    suspend fun storeRemotePage(items: List<CharacterEntity>, page: Int, now: Long) {
+        for (remote in items) {
+            insertRemoteIfMissing(remote)
+            updateRemoteFields(remote.id, remote.name, remote.status, remote.species,
+                remote.gender, remote.origin, remote.location, remote.imageUrl,
+                remote.episodeCount, now)
+        }
+        upsertPage(CachedPageEntity(page, now))
+    }
+
     @Query("UPDATE characters SET tracking = :tracking WHERE id = :id")
     suspend fun setTracking(id: Int, tracking: String)
 

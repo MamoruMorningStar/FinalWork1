@@ -20,6 +20,8 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
     suspend fun isCacheStale(ttlMillis: Long = 24L * 60 * 60 * 1000, pages: Int = 1): Boolean =
         stalePages(pages, ttlMillis).isNotEmpty()
 
+    suspend fun cachedPageNumbers(): Set<Int> = dao.cachedPages().map { it.page }.toSet()
+
     suspend fun highestCachedPage(): Int = dao.cachedPages().maxOfOrNull { it.page } ?: 0
 
     suspend fun stalePages(pages: Int, ttlMillis: Long = 24L * 60 * 60 * 1000): List<Int> {
@@ -33,19 +35,16 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
     suspend fun refresh(page: Int = 1): Result<Int> = runCatching {
         val response = api.getCharacters(page)
         val now = System.currentTimeMillis()
-        response.results.forEach { remote ->
-            dao.insertRemoteIfMissing(CharacterEntity(
+        val remoteItems = response.results.map { remote ->
+            CharacterEntity(
                 id = remote.id, name = remote.name, status = remote.status,
                 species = remote.species, gender = remote.gender,
                 origin = remote.origin.name, location = remote.location.name,
                 imageUrl = remote.image, episodeCount = remote.episode.size,
                 fetchedAt = now,
-            ))
-            dao.updateRemoteFields(remote.id, remote.name, remote.status, remote.species,
-                remote.gender, remote.origin.name, remote.location.name, remote.image,
-                remote.episode.size, now)
+            )
         }
-        dao.upsertPage(CachedPageEntity(page, now))
+        dao.storeRemotePage(remoteItems, page, now)
         response.results.size
     }
 
@@ -58,11 +57,13 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
     suspend fun setHidden(id: Int, value: Boolean) = dao.setHidden(id, value)
     suspend fun setNote(id: Int, note: String) = dao.setNote(id, note.take(2000))
     suspend fun setRating(id: Int, rating: Int) = dao.setRating(id, rating.coerceIn(0, 5))
-    suspend fun createCollection(title: String, description: String = ""): Long =
-        dao.createCollection(UserCollectionEntity(
-            title = CollectionRules.normalizeTitle(title).ifBlank { "Без названия" },
-            description = description.trim().take(300),
+    suspend fun createCollection(title: String, description: String = ""): Long {
+        val normalized = CollectionRules.normalizeTitle(title)
+        require(normalized.isNotBlank()) { "Название не может быть пустым" }
+        return dao.createCollection(UserCollectionEntity(
+            title = normalized, description = description.trim().take(300),
         ))
+    }
     suspend fun editCollection(id: Long, title: String, description: String) {
         val normalized = CollectionRules.normalizeTitle(title)
         require(normalized.isNotBlank()) { "Название не может быть пустым" }

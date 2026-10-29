@@ -22,4 +22,12 @@ class SyncBatchTest {
         assertEquals(listOf(1, 2, 3), attempts)
         assertTrue(result.shouldRetry)
     }
+
+    @Test fun `only requested stale pages are retried and later pages run`() = runTest {
+        val attempts = mutableListOf<Int>()
+        val result = SyncBatch { page -> attempts.add(page); page != 2 }.runPages(listOf(5, 2, 5))
+        assertEquals(listOf(2, 5), attempts)
+        assertEquals(1, result.failed)
+        assertEquals(1, result.succeeded)
+    }
 }

@@ -27,4 +27,10 @@ class SyncPlannerTest {
         // пропущенные в порядке возрастания: 1, 2, 4, 6, 7, 8, 9, 10 — берём первые 3
         assertEquals(listOf(1, 2, 4), pages)
     }
+
+    @org.junit.Test fun `next page fills holes before advancing`() {
+        org.junit.Assert.assertEquals(2, SyncPlanner.nextMissingPage(setOf(1, 3, 4), 2))
+        org.junit.Assert.assertEquals(4, SyncPlanner.nextMissingPage(setOf(1, 2, 3), 2))
+        org.junit.Assert.assertEquals(1, SyncPlanner.nextMissingPage(emptySet(), 5))
+    }
 }
