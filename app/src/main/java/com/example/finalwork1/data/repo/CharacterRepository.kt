@@ -7,7 +7,7 @@ import com.example.finalwork1.data.remote.RickMortyApi
 import com.example.finalwork1.domain.CachePolicy
 import kotlinx.coroutines.flow.Flow
 
-class CharacterRepository(private val dao: AppDao, private val api: RickMortyApi) {
+class CharacterRepository @javax.inject.Inject constructor(private val dao: AppDao, private val api: RickMortyApi) {
     val characters: Flow<List<CharacterEntity>> = dao.observeCharacters()
     val collections = dao.observeCollections()
     val history = dao.observeHistory()

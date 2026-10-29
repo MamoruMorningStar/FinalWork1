@@ -12,7 +12,7 @@ private val Context.settingsStore by preferencesDataStore(name = "app_settings")
 
 data class AppPreferences(val showHidden: Boolean = false, val preloadPages: Int = 2, val darkTheme: Boolean = true)
 
-class PreferencesRepository(private val context: Context) {
+class PreferencesRepository @javax.inject.Inject constructor(@dagger.hilt.android.qualifiers.ApplicationContext private val context: Context) {
     private val showHiddenKey = booleanPreferencesKey("show_hidden")
     private val preloadKey = intPreferencesKey("preload_pages")
     private val darkThemeKey = booleanPreferencesKey("dark_theme")

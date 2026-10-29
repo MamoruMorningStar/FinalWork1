@@ -33,15 +33,4 @@ data class CharacterPage(val info: ApiInfo, val results: List<ApiCharacter>)
 interface RickMortyApi {
     @GET("character")
     suspend fun getCharacters(@Query("page") page: Int = 1): CharacterPage
-
-    companion object {
-        fun create(baseUrl: String = "https://rickandmortyapi.com/api/"): RickMortyApi {
-            val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
-            return Retrofit.Builder()
-                .baseUrl(baseUrl)
-                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-                .build()
-                .create(RickMortyApi::class.java)
-        }
-    }
 }

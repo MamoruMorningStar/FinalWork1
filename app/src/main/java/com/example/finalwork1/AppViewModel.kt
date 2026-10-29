@@ -1,30 +1,20 @@
 package com.example.finalwork1
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import com.example.finalwork1.data.PreferencesRepository
-import com.example.finalwork1.data.local.AppDatabase
 import com.example.finalwork1.data.local.CharacterEntity
 import com.example.finalwork1.data.local.UserCollectionEntity
-import com.example.finalwork1.data.remote.RickMortyApi
 import com.example.finalwork1.data.repo.CharacterRepository
-import com.example.finalwork1.data.sync.SyncWorker
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
 
-class AppViewModel(
+@dagger.hilt.android.lifecycle.HiltViewModel
+class AppViewModel @javax.inject.Inject constructor(
     private val repository: CharacterRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val scheduleSync: () -> Unit,
+    private val syncScheduler: com.example.finalwork1.data.sync.SyncScheduler,
 ) : ViewModel() {
 
     val characters = repository.characters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -35,7 +25,7 @@ class AppViewModel(
     val busy = kotlinx.coroutines.flow.MutableStateFlow(false)
 
     init {
-        scheduleSync()
+        syncScheduler.schedule()
         viewModelScope.launch {
             // Кэш остаётся источником UI; сеть обновляет его только при истечении TTL.
             if (repository.isCacheStale()) refresh()
@@ -51,25 +41,6 @@ class AppViewModel(
                 { "Нет соединения. Используются сохранённые данные." },
             )
             busy.value = false
-        }
-    }
-
-    class Factory(context: Context) : ViewModelProvider.Factory {
-        private val appContext = context.applicationContext
-
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            require(modelClass.isAssignableFrom(AppViewModel::class.java))
-            val repository = CharacterRepository(AppDatabase.get(appContext).dao(), RickMortyApi.create())
-            val preferences = PreferencesRepository(appContext)
-            return AppViewModel(repository, preferences) {
-                val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-                val request = PeriodicWorkRequestBuilder<SyncWorker>(12, TimeUnit.HOURS)
-                    .setConstraints(constraints).build()
-                WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
-                    "catalog_refresh", ExistingPeriodicWorkPolicy.KEEP, request
-                )
-            } as T
         }
     }
 

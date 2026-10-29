@@ -12,12 +12,4 @@ import androidx.room.RoomDatabase
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): AppDao
-
-    companion object {
-        @Volatile private var INSTANCE: AppDatabase? = null
-        fun get(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
-            INSTANCE ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "media_shelf.db")
-                .build().also { INSTANCE = it }
-        }
-    }
 }
