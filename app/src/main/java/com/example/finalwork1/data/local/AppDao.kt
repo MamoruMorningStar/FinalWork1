@@ -30,7 +30,7 @@ interface AppDao {
 
 
     @Transaction
-    suspend fun storeRemotePage(items: List<CharacterEntity>, page: Int, now: Long) {
+    suspend fun storeRemotePage(items: List<CharacterEntity>, page: Int, now: Long, totalPages: Int) {
         for (remote in items) {
             insertRemoteIfMissing(remote)
             updateRemoteFields(remote.id, remote.name, remote.status, remote.species,
@@ -38,6 +38,7 @@ interface AppDao {
                 remote.episodeCount, now)
         }
         upsertPage(CachedPageEntity(page, now))
+        upsertMetadata(CatalogMetadataEntity(totalPages = totalPages))
     }
 
     @Query("UPDATE characters SET tracking = :tracking WHERE id = :id")
@@ -94,6 +95,21 @@ interface AppDao {
     @Upsert
     suspend fun upsertPage(page: CachedPageEntity)
 
+    @Upsert
+    suspend fun upsertMetadata(metadata: CatalogMetadataEntity)
+
+    @Query("SELECT totalPages FROM catalog_metadata WHERE id = 1")
+    fun observeTotalPages(): Flow<Int?>
+
+    @Query("SELECT totalPages FROM catalog_metadata WHERE id = 1")
+    suspend fun totalPages(): Int?
+
+    @Query("DELETE FROM recent_history WHERE id = :id")
+    suspend fun deleteVisit(id: Long)
+
+    @Query("DELETE FROM recent_history")
+    suspend fun clearHistory()
+
     @Query("SELECT * FROM cached_pages")
     suspend fun cachedPages(): List<CachedPageEntity>
 
@@ -112,7 +128,7 @@ interface AppDao {
     @Query("DELETE FROM recent_history WHERE characterId = :characterId")
     suspend fun removePreviousVisits(characterId: Int)
 
-    @androidx.room.Transaction
+    @Transaction
     suspend fun recordVisit(visit: RecentVisitEntity) {
         removePreviousVisits(visit.characterId)
         addVisit(visit)

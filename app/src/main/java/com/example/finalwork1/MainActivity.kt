@@ -56,6 +56,9 @@ internal fun MediaShelfApp(vm: AppViewModel) {
     val prefs by vm.preferences.collectAsStateWithLifecycle()
     val message by vm.syncMessage.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val totalPages by vm.totalPages.collectAsStateWithLifecycle()
+    val loadedPages by vm.loadedPages.collectAsStateWithLifecycle()
+    val hasMorePages by vm.hasMorePages.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val workManager = remember(context) { WorkManager.getInstance(context.applicationContext) }
     val backgroundWork by workManager.getWorkInfosForUniqueWorkFlow("catalog_refresh")
@@ -63,12 +66,13 @@ internal fun MediaShelfApp(vm: AppViewModel) {
     val backgroundStatus = backgroundWork.firstOrNull()?.let { info ->
         when (info.state) {
             WorkInfo.State.RUNNING -> "Фоновая синхронизация выполняется"
-            WorkInfo.State.FAILED -> "Фоновая синхронизация завершилась с ошибкой: ${info.outputData.getInt("failed", 0)} страниц"
-            WorkInfo.State.SUCCEEDED -> "Фоновая синхронизация завершена"
-            WorkInfo.State.ENQUEUED -> if (info.runAttemptCount > 0) "Фоновая синхронизация: ожидание повтора после ошибки" else ""
+            WorkInfo.State.ENQUEUED -> if (info.runAttemptCount > 0) "Фоновая синхронизация: ожидание повтора" else ""
             else -> ""
         }
     }.orEmpty()
+    val syncProgress = backgroundWork.firstOrNull()?.progress
+    val latestProgress = syncProgress?.getInt("completed", 0) ?: 0
+    val progressTotal = syncProgress?.getInt("total", 0) ?: 0
     var showCreate by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -98,6 +102,9 @@ internal fun MediaShelfApp(vm: AppViewModel) {
         Column(Modifier.fillMaxSize().padding(padding)) {
             Text(message, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(8.dp))
             if (backgroundStatus.isNotBlank()) Text(backgroundStatus, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp))
+            if (backgroundWork.firstOrNull()?.state == WorkInfo.State.RUNNING && progressTotal > 0) {
+                Text("Обработано страниц: $latestProgress из $progressTotal", modifier = Modifier.padding(horizontal = 8.dp))
+            }
             NavHost(navController = nav, startDestination = Screen.CATALOG.route, modifier = Modifier.weight(1f)) {
                 composable(Screen.CATALOG.route) {
                     Column {
@@ -112,8 +119,8 @@ internal fun MediaShelfApp(vm: AppViewModel) {
                                 onTrack = { c, value -> vm.track(c.id, value) },
                             )
                         }
-                        Button(onClick = vm::loadNextPage, modifier = Modifier.fillMaxWidth().padding(8.dp), enabled = !busy) {
-                            Text("Загрузить следующую страницу")
+                        Button(onClick = vm::loadNextPage, modifier = Modifier.fillMaxWidth().padding(8.dp), enabled = !busy && hasMorePages) {
+                            Text(if (!hasMorePages) "Все страницы загружены" else "Загрузить следующую страницу")
                         }
                     }
                 }
@@ -142,7 +149,8 @@ internal fun MediaShelfApp(vm: AppViewModel) {
                     }
                 }
                 composable(Screen.HISTORY.route) {
-                    HistoryScreen(history, characters, onOpen = { vm.visit(it); nav.navigate("character/${it.id}") })
+                    HistoryScreen(history, characters, onOpen = { vm.visit(it); nav.navigate("character/${it.id}") },
+                        onDelete = vm::deleteVisit, onClear = vm::clearHistory)
                 }
                 composable(Screen.SETTINGS.route) {
                     SettingsScreen(prefs.showHidden, vm::setShowHidden, prefs.preloadPages, vm::setPreloadPages,

@@ -17,6 +17,7 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
     val characters: Flow<List<CharacterEntity>> = dao.observeCharacters()
     val collections = dao.observeCollections()
     val history = dao.observeHistory()
+    val totalPages = dao.observeTotalPages()
     val membershipCounts = dao.observeMembershipCounts()
 
     suspend fun isCacheStale(ttlMillis: Long = 24L * 60 * 60 * 1000, pages: Int = 1): Boolean =
@@ -24,12 +25,15 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
 
     suspend fun cachedPageNumbers(): Set<Int> = dao.cachedPages().map { it.page }.toSet()
 
+    suspend fun getTotalPages(): Int? = dao.totalPages()
+
     suspend fun highestCachedPage(): Int = dao.cachedPages().maxOfOrNull { it.page } ?: 0
 
     suspend fun stalePages(pages: Int, ttlMillis: Long = 24L * 60 * 60 * 1000): List<Int> {
         val fetched = dao.cachedPages().associate { it.page to it.fetchedAt }
         val now = System.currentTimeMillis()
-        return (1..pages.coerceAtLeast(1)).filter { page ->
+        val upper = minOf(pages.coerceAtLeast(1), dao.totalPages() ?: Int.MAX_VALUE)
+        return (1..upper).filter { page ->
             CachePolicy.isStale(fetched[page], now, ttlMillis)
         }
     }
@@ -54,9 +58,14 @@ class CharacterRepository @Inject constructor(private val dao: AppDao, private v
                 fetchedAt = now,
             )
         }
-        dao.storeRemotePage(remoteItems, page, now)
+        require(response.info.pages > 0) { "Invalid page count" }
+        require(page in 1..response.info.pages) { "Page outside available range" }
+        dao.storeRemotePage(remoteItems, page, now, response.info.pages)
         return response.results.size
     }
+
+    suspend fun deleteVisit(id: Long) = dao.deleteVisit(id)
+    suspend fun clearHistory() = dao.clearHistory()
 
     suspend fun visit(character: CharacterEntity) {
         dao.recordVisit(RecentVisitEntity(characterId = character.id, characterName = character.name))

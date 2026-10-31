@@ -35,6 +35,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE-notice.md"
+            )
+        }
+    }
     buildFeatures {
         compose = true
     }
@@ -46,6 +54,8 @@ dependencies {
     implementation("androidx.hilt:hilt-work:1.3.0")
     ksp("androidx.hilt:hilt-compiler:1.3.0")
     testImplementation("io.mockk:mockk:1.13.13")
+    androidTestImplementation("io.mockk:mockk-android:1.13.13")
+    androidTestImplementation("androidx.work:work-testing:2.10.3")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

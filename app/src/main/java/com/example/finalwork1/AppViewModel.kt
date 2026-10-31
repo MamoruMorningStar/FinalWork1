@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.finalwork1.data.PreferencesRepository
 import com.example.finalwork1.data.local.CharacterEntity
-import com.example.finalwork1.data.local.UserCollectionEntity
 import com.example.finalwork1.data.repo.CharacterRepository
+import com.example.finalwork1.data.sync.SyncScheduler
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -20,17 +20,18 @@ import com.example.finalwork1.domain.SyncPlanner
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import retrofit2.HttpException
-import kotlinx.coroutines.flow.map
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
     private val repository: CharacterRepository,
     private val preferencesRepository: PreferencesRepository,
+    private val syncScheduler: SyncScheduler,
 ) : ViewModel() {
 
     val characters = repository.characters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collections = repository.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val membershipCounts = repository.membershipCounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val totalPages = repository.totalPages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val history = repository.history.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val preferences = preferencesRepository.preferences.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppPreferences())
     val syncMessage = MutableStateFlow("Локальная база готова")
@@ -43,11 +44,19 @@ class AppViewModel @Inject constructor(
 
     private val refreshMutex = Mutex()
     val loadedPages = MutableStateFlow(0)
+    val hasMorePages = MutableStateFlow(true)
+
+    private suspend fun updatePageState() {
+        val cached = repository.cachedPageNumbers()
+        loadedPages.value = cached.size
+        val total = repository.getTotalPages()
+        hasMorePages.value = total == null || (1..total).any { it !in cached }
+    }
 
     init {
         viewModelScope.launch {
             val pages = preferencesRepository.preferences.first().preloadPages
-            loadedPages.value = repository.highestCachedPage()
+            updatePageState()
             if (repository.isCacheStale(pages = pages)) refresh()
         }
     }
@@ -64,7 +73,8 @@ class AppViewModel @Inject constructor(
                         onFailure = { failures += "страница $page — ${errorLabel(it)}" },
                     )
                 }
-                loadedPages.value = repository.highestCachedPage()
+                updatePageState()
+                if (failures.isNotEmpty()) syncScheduler.scheduleRecovery()
                 syncMessage.value = if (failures.isEmpty()) "Обновлено: $updated персонажей"
                     else "Обновлено: $updated · Ошибки: ${failures.joinToString()}"
             } finally {
@@ -74,8 +84,8 @@ class AppViewModel @Inject constructor(
     }
 
     fun refresh() = viewModelScope.launch {
-        val count = maxOf(preferences.first().preloadPages, loadedPages.value, 1)
-        refreshPages((1..count).toList())
+        val count = maxOf(preferences.first().preloadPages, repository.highestCachedPage(), 1)
+        refreshPages(repository.stalePages(count))
     }
 
     fun loadNextPage() = viewModelScope.launch {
@@ -83,19 +93,28 @@ class AppViewModel @Inject constructor(
             busy.value = true
             try {
                 val cached = repository.cachedPageNumbers()
-                val next = SyncPlanner.nextMissingPage(cached, preferences.first().preloadPages)
+                val next = SyncPlanner.nextMissingPage(cached, 1)
+                val total = repository.getTotalPages()
+                if (total != null && next > total) {
+                    updatePageState()
+                    syncMessage.value = "Все $total страниц уже загружены"
+                    return@withLock
+                }
                 repository.refresh(next).fold(
                     onSuccess = {
-                        loadedPages.value = repository.highestCachedPage()
+                        updatePageState()
                         syncMessage.value = "Загружена страница $next"
                     },
-                    onFailure = { syncMessage.value = errorLabel(it) },
+                    onFailure = { syncScheduler.scheduleRecovery(); syncMessage.value = errorLabel(it) },
                 )
             } finally {
                 busy.value = false
             }
         }
     }
+
+    fun deleteVisit(id: Long) = viewModelScope.launch { repository.deleteVisit(id) }
+    fun clearHistory() = viewModelScope.launch { repository.clearHistory() }
 
     fun track(id: Int, value: String) = viewModelScope.launch { repository.setTracking(id, value) }
     fun pin(id: Int, value: Boolean) = viewModelScope.launch { repository.setPinned(id, value) }
@@ -126,8 +145,9 @@ class AppViewModel @Inject constructor(
                 try {
                     val failed = mutableListOf<String>()
                     for (page in missing) repository.refresh(page).onFailure { failed += errorLabel(it) }
-                    loadedPages.value = repository.highestCachedPage()
+                    updatePageState()
                     syncMessage.value = if (failed.isEmpty()) "Предзагрузка завершена" else "Ошибки: ${failed.joinToString()}"
+                    if (failed.isNotEmpty()) syncScheduler.scheduleRecovery()
                 } finally { busy.value = false }
             }
         }

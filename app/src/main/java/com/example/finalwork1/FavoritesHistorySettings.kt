@@ -1,27 +1,17 @@
 package com.example.finalwork1
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.finalwork1.data.local.RecentVisitEntity
 import com.example.finalwork1.data.local.CharacterEntity
-import com.example.finalwork1.data.local.UserCollectionEntity
-import com.example.finalwork1.domain.CatalogFilter
-import com.example.finalwork1.domain.CatalogFilterLogic
-import com.example.finalwork1.domain.toCatalogRow
-import com.example.finalwork1.ui.theme.FINALWORK1Theme
 
 
 @Composable
@@ -52,18 +42,30 @@ internal fun HistoryScreen(
     history: List<RecentVisitEntity>,
     characters: List<CharacterEntity>,
     onOpen: (CharacterEntity) -> Unit,
+    onDelete: (Long) -> Unit,
+    onClear: () -> Unit,
 ) {
+    var confirmClear by remember { mutableStateOf(false) }
+    if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false },
+        title = { Text("Очистить историю?") },
+        text = { Text("Все записи истории будут удалены.") },
+        confirmButton = { TextButton(onClick = { onClear(); confirmClear = false }) { Text("Очистить") } },
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Отмена") } })
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("Недавно открытые", style = MaterialTheme.typography.headlineSmall)
         Text("Последние посещённые карточки сохраняются локально.")
+        if (history.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Очистить историю") }
         if (history.isEmpty()) EmptyState("История пуста", "Открой карточку персонажа в каталоге.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(history, key = { it.characterId }) { visit ->
                 val character = characters.firstOrNull { it.id == visit.characterId }
                 if (character == null) {
                     ListItem(headlineContent = { Text(visit.characterName) },
-                        supportingContent = { Text("Карточка ещё не загружена в кэш") })
-                } else CharacterRow(character, onClick = { onOpen(character) })
+                        supportingContent = { Text("Карточка ещё не загружена в кэш") },
+                        trailingContent = { TextButton(onClick = { onDelete(visit.id) }) { Text("Удалить") } })
+                } else CharacterRow(character, onClick = { onOpen(character) }, trailing = {
+                    TextButton(onClick = { onDelete(visit.id) }) { Text("Удалить") }
+                })
             }
         }
     }

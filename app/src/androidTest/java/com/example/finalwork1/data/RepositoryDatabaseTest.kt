@@ -72,6 +72,19 @@ class RepositoryDatabaseTest {
         assertEquals("Changed during fetch", database.dao().getCharacter(1)?.note)
     }
 
+    @Test fun remoteFieldWriteAfterNoteEditPreservesLatestNote() = runBlocking {
+        val dao = database.dao()
+        dao.upsertCharacters(listOf(entity(1)))
+        // Snapshot captured before the user's edit: the old read-modify-upsert loses the note.
+        val staleSnapshot = dao.getCharacter(1)!!
+        dao.setNote(1, "New local note")
+        dao.storeRemotePage(listOf(staleSnapshot.copy(name = "Remote update", note = "")), 1,
+            System.currentTimeMillis(), 2)
+        assertEquals("New local note", dao.getCharacter(1)?.note)
+        assertEquals("Remote update", dao.getCharacter(1)?.name)
+        assertEquals(2, dao.totalPages())
+    }
+
     @Test fun repeatedVisitsDoNotPushOtherCharactersOutOfHistory() = runBlocking {
         val repo = CharacterRepository(database.dao(), object : RickMortyApi {
             override suspend fun getCharacters(page: Int): CharacterPage = error("unused")

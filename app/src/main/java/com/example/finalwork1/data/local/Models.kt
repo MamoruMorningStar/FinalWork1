@@ -56,5 +56,8 @@ data class RecentVisitEntity(
 @Entity(tableName = "cached_pages")
 data class CachedPageEntity(@PrimaryKey val page: Int, val fetchedAt: Long)
 
+@Entity(tableName = "catalog_metadata")
+data class CatalogMetadataEntity(@PrimaryKey val id: Int = 1, val totalPages: Int)
+
 
 data class CharacterMembershipCount(val characterId: Int, val count: Int)
