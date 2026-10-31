@@ -1,0 +1,176 @@
+package com.example.finalwork1
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.finalwork1.data.local.CharacterEntity
+import com.example.finalwork1.data.local.UserCollectionEntity
+import com.example.finalwork1.domain.CatalogFilter
+import com.example.finalwork1.domain.CatalogFilterLogic
+import com.example.finalwork1.domain.toCatalogRow
+
+
+@Composable
+internal fun CatalogScreen(
+    characters: List<CharacterEntity>,
+    query: String, onQuery: (String) -> Unit,
+    statusFilter: String, onStatus: (String) -> Unit,
+    personalStatusFilter: String, onPersonalStatus: (String) -> Unit,
+    trackingOnly: Boolean, onTrackingOnly: (Boolean) -> Unit,
+    showHidden: Boolean,
+    onlyHidden: Boolean, onOnlyHidden: (Boolean) -> Unit,
+    onResetFilters: () -> Unit,
+    membershipCounts: Map<Int, Int>,
+    loading: Boolean,
+    onOpen: (CharacterEntity) -> Unit, onPin: (CharacterEntity) -> Unit,
+    onHide: (CharacterEntity) -> Unit, onTrack: (CharacterEntity, String) -> Unit,
+) {
+    val filter = CatalogFilter(
+        query = query,
+        status = if (statusFilter == "Все") "" else statusFilter,
+        showHidden = showHidden,
+        onlyHidden = onlyHidden,
+        onlyTracking = trackingOnly,
+        personalStatus = if (personalStatusFilter == "Все") "" else personalStatusFilter,
+    )
+    val byId = characters.associateBy { it.id }
+    val filtered = CatalogFilterLogic.sort(
+        characters.map { it.toCatalogRow(membershipCounts[it.id] ?: 0) }.filter { row ->
+            CatalogFilterLogic.matches(row, filter)
+        }
+    ).mapNotNull { row -> byId[row.character.id] }
+
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("ИССЛЕДОВАТЬ МУЛЬТИВСЕЛЕННУЮ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQuery,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Поиск по имени, виду или происхождению") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            var expanded by remember { mutableStateOf(false) }
+            var personalStatusExpanded by remember { mutableStateOf(false) }
+            val personalOptions = listOf(
+                "Все" to "Все",
+                "NONE" to "Без оценки",
+                "TRACKING" to "Любимый",
+                "PLANNED" to "Интересный",
+                "COMPLETED" to "Не нравится",
+            )
+            Box {
+                TextButton(onClick = { expanded = true }) { Text("Статус: $statusFilter") }
+                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                    listOf("Все", "Alive", "Dead", "unknown").forEach { item ->
+                        DropdownMenuItem(text = { Text(item) }, onClick = { onStatus(item); expanded = false })
+                    }
+                }
+            }
+            Box {
+                TextButton(onClick = { personalStatusExpanded = true }) {
+                    Text("Личный статус: ${trackingLabel(personalStatusFilter)}")
+                }
+                DropdownMenu(expanded = personalStatusExpanded, onDismissRequest = { personalStatusExpanded = false }) {
+                    personalOptions.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = { onPersonalStatus(value); personalStatusExpanded = false },
+                        )
+                    }
+                }
+            }
+            Text("API", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = trackingOnly, onClick = { onTrackingOnly(!trackingOnly) }, label = { Text("Мой список") })
+            FilterChip(selected = onlyHidden, onClick = { onOnlyHidden(!onlyHidden) }, label = { Text("Скрытые") })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Показано ${filtered.size} из ${characters.size}", style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = onResetFilters) { Text("Сбросить фильтры") }
+        }
+        if (characters.isEmpty()) {
+            if (loading) {
+                Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text("Загружаем каталог…")
+                }
+            } else EmptyState("Пока нет локальных данных", "Подключись к интернету и нажми «Обновить». После загрузки каталог доступен офлайн.")
+        } else if (filtered.isEmpty()) {
+            EmptyState("Ничего не найдено", "Сбрось фильтры или включи «Скрытые», чтобы найти скрытых персонажей.")
+        } else {
+            LazyColumn(contentPadding = PaddingValues(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(filtered, key = { it.id }) { c ->
+                    CharacterRow(c, onClick = { onOpen(c) }, trailing = {
+                        Row {
+                            TextButton(onClick = { onPin(c) }) { Text(if (c.isPinned) "★" else "☆") }
+                            var expanded by remember { mutableStateOf(false) }
+                            Box {
+                                TextButton(onClick = { expanded = true }) { Text("⋮") }
+                                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                    DropdownMenuItem(text = { Text(if (c.isHidden) "Показать" else "Скрыть") }, onClick = { onHide(c); expanded = false })
+                                    listOf("NONE" to "Без оценки", "TRACKING" to "Любимый", "PLANNED" to "Интересный", "COMPLETED" to "Не нравится").forEach { (value, label) ->
+                                        DropdownMenuItem(text = { Text(label) }, onClick = { onTrack(c, value); expanded = false })
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun CatalogDestination(
+    characters: List<CharacterEntity>,
+    showHidden: Boolean,
+    membershipCounts: Map<Int, Int>,
+    loading: Boolean,
+    onOpen: (CharacterEntity) -> Unit,
+    onPin: (CharacterEntity) -> Unit,
+    onHide: (CharacterEntity) -> Unit,
+    onTrack: (CharacterEntity, String) -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var status by rememberSaveable { mutableStateOf("Все") }
+    var personalStatus by rememberSaveable { mutableStateOf("Все") }
+    var trackingOnly by rememberSaveable { mutableStateOf(false) }
+    var onlyHidden by rememberSaveable { mutableStateOf(false) }
+    val resetFilters = { query = ""; status = "Все"; personalStatus = "Все"; trackingOnly = false; onlyHidden = false }
+    val toggleHidden: (Boolean) -> Unit = { enabled ->
+        onlyHidden = enabled
+        if (enabled) {
+            query = ""
+            status = "Все"
+            personalStatus = "Все"
+            trackingOnly = false
+        }
+    }
+    CatalogScreen(
+        characters, query, { query = it }, status, { status = it },
+        personalStatus, { personalStatus = it }, trackingOnly, { trackingOnly = it },
+        showHidden, onlyHidden, toggleHidden, resetFilters,
+        membershipCounts, loading, onOpen, onPin, onHide, onTrack,
+    )
+}
